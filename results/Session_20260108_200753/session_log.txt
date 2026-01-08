@@ -1,0 +1,2 @@
+[2026-01-08 20:07:58] Acquired Low-Mag Image: results\Session_20260108_200753\LowMag_Overview.jpg
+[2026-01-08 20:07:59] Found 0 targets.

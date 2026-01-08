@@ -1,0 +1,12 @@
+[2026-01-08 20:13:18] [Grid #1] Found 0 targets.
+[2026-01-08 20:13:23] [Grid #2] Found 0 targets.
+[2026-01-08 20:13:27] [Grid #3] Found 1 targets.
+[2026-01-08 20:13:32] [Grid #4] Found 0 targets.
+[2026-01-08 20:13:37] [Grid #5] Found 1 targets.
+[2026-01-08 20:13:41] [Grid #6] Found 0 targets.
+[2026-01-08 20:13:46] [Grid #7] Found 1 targets.
+[2026-01-08 20:13:51] [Grid #8] Found 0 targets.
+[2026-01-08 20:13:55] [Grid #9] Found 0 targets.
+[2026-01-08 20:14:00] Captured Target #1 at (1500.3875732421875, 500.5254924297333)
+[2026-01-08 20:14:04] Captured Target #2 at (950.2978086471558, 950.5774259567261)
+[2026-01-08 20:14:09] Captured Target #3 at (500.1953125, 1500.1953125)

@@ -1,0 +1,4 @@
+[2026-01-08 20:08:23] Acquired Low-Mag Image: results\Session_20260108_200819\LowMag_Overview.jpg
+[2026-01-08 20:08:24] Found 2 targets.
+[2026-01-08 20:08:29] Captured Target #1
+[2026-01-08 20:08:33] Captured Target #2
