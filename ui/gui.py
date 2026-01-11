@@ -414,14 +414,42 @@ class SmartSEMApp:
             
         summary = f"총 {len(active_slots)}개 샘플을 분석합니다.\n진행하시겠습니까?"
         if messagebox.askyesno("Confirm Start", summary):
-            # [중요] 설정 데이터를 저장하고 GUI를 종료하여 main으로 돌아감
-            self.config_data = active_slots
-            print(">>> GUI 설정 완료. 메인 로직으로 이동합니다.")
-            self.root.quit() # mainloop 종료
+            # 창을 닫지 않고 버튼만 비활성화
+            self.btn_run.config(state=tk.DISABLED, text="Running...")
+            self.log_message(">>> 자동화 스레드를 시작합니다...")
+            
+            # 스레드로 실행 (GUI 멈춤 방지 + 실시간 로그)
+            thread = threading.Thread(target=self.run_workflow_thread, args=(active_slots,))
+            thread.daemon = True # 프로그램 종료 시 스레드도 강제 종료
+            thread.start()
 
     def run_workflow_thread(self, active_slots):
-        # ... (Deprecated) ...
-        pass
+        try:
+            # 시뮬레이션 모드 판단 (tescanautomation 라이브러리 유무 체크)
+            try:
+                import tescanautomation
+                sim_mode = False
+                self.log_message("[System] Tescan 라이브러리 감지됨. REAL MODE로 실행합니다.")
+            except ImportError:
+                sim_mode = True
+                self.log_message("[System] Tescan 라이브러리 없음. SIMULATION MODE로 실행합니다.")
+
+            # 매니저 생성 (로그 콜백 연결)
+            manager = AutomationManager(simulation=sim_mode, log_callback=self.log_message)
+            
+            # 실행
+            manager.run(active_slots)
+            
+            self.log_message(">>> 모든 작업이 완료되었습니다.")
+            messagebox.showinfo("Done", "분석이 완료되었습니다.")
+            
+        except Exception as e:
+            self.log_message(f"[Critical Error] {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            # 버튼 다시 활성화 (메인 스레드에서 처리해야 안전하므로 after 사용)
+            self.root.after(0, lambda: self.btn_run.config(state=tk.NORMAL, text="START AUTOMATION"))
 
 def launch_gui():
     root = tk.Tk()
@@ -433,18 +461,8 @@ def launch_gui():
         pass
         
     app = SmartSEMApp(root)
-    app.config_data = None # 데이터 담을 변수 초기화
-    
-    root.mainloop() # 여기서 창이 뜰 동안 대기함
-    
-    # 창이 닫히면(root.quit) 여기로 넘어옴
-    try:
-        root.destroy()
-    except:
-        pass
-        
-    # 설정된 데이터를 main.py로 반환
-    return app.config_data
+    # 데이터 반환 없이 여기서 계속 실행됨
+    root.mainloop()
 
 if __name__ == "__main__":
     launch_gui()
