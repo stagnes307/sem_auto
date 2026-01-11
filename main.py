@@ -28,7 +28,21 @@ def main():
         
     try:
         app = AutomationManager(simulation=args.simulation, model_path=args.model)
-        app.run()
+        
+        # GUI 없이 실행할 때를 위한 테스트 데이터 (1번 슬롯 시뮬레이션)
+        test_slots = {
+            1: {
+                'name': 'Test_Sample',
+                'settings': {
+                    'low_mag': 5000, 
+                    'high_mag': 20000, 
+                    'high_count': 3,
+                    'high_mag_2': 50000
+                }
+            }
+        }
+        
+        app.run(active_slots=test_slots)
     except KeyboardInterrupt:
         print("\n[INFO] Process interrupted by user.")
     except Exception as e:

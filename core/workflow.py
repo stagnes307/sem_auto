@@ -19,106 +19,127 @@ SLOT_COORDINATES = {
 # ==========================================================
 
 class AutomationManager:
-    def __init__(self, simulation=True, model_path="yolov8n.pt"):
+    def __init__(self, simulation=True, model_path="yolov8n.pt", log_callback=None):
         self.simulation = simulation
+        self.log_callback = log_callback
+        
+        self.log(f"[System] Initializing Automation Manager (Simulation={simulation})...")
+        
         self.sem = MicroscopeController(simulation=simulation)
         self.ai = YOLODetector(model_path=model_path)
         self.file_manager = FileManager()
+
+    def log(self, message):
+        """Console output + GUI Callback"""
+        print(message)
+        if self.log_callback:
+            self.log_callback(message)
         
     def run(self, active_slots=None):
         """
         active_slots: GUI에서 넘어온 슬롯 설정 데이터
         예: {1: {'name': 'NCM_01', 'settings': {...}}, 3: {...}}
         """
-        print(">>> Starting Automation Workflow")
+        self.log(">>> Starting Automation Workflow")
         
-        # 1. Connect
-        self.sem.connect()
-        
-        if not active_slots:
-            print("[Error] No active slots provided!")
-            return
+        try:
+            # 1. Connect
+            self.sem.connect()
+            
+            if not active_slots:
+                self.log("[Error] No active slots provided!")
+                return
 
-        for sid, data in active_slots.items():
-            sample_name = data['name']
-            settings = data['settings']
-            
-            # SLOT_COORDINATES에서 좌표 가져오기
-            if sid not in SLOT_COORDINATES:
-                print(f"[Warning] No coordinates defined for Slot #{sid}. Skipping.")
-                continue
+            for sid, data in active_slots.items():
+                sample_name = data['name']
+                settings = data['settings']
                 
-            start_x, start_y = SLOT_COORDINATES[sid]
-            
-            print(f"\n>>>> Processing Sample: {sample_name} (Slot #{sid}) at ({start_x}, {start_y})")
-            
-            # --- 1단계: 저배율 촬영 (Search) ---
-            # 5000배로 이동
-            self.sem.move_stage(start_x, start_y)
-            self.sem.set_magnification(settings['low_mag'])
-            self.sem.auto_focus()
-            
-            # 1장 찍고 저장
-            low_mag_img = self.sem.acquire_image()
-            self.file_manager.save_image(
-                low_mag_img, 
-                f"Overview_Center.jpg", 
-                subdir=os.path.join(sample_name, f"LowMag_x{settings['low_mag']}")
-            )
-            
-            # --- 2단계: AI 탐지 ---
-            detections = self.ai.detect_particles(low_mag_img)
-            if not detections and self.simulation:
-                detections = self.ai.detect_blobs_fallback(low_mag_img) # Fallback for simulation
-            
-            print(f"[{sample_name}] Found {len(detections)} particles. Selecting top {settings['high_count']}.")
-            
-            # 좌표 변환을 위한 스케일 계산 (예시: FOV 200um / 1024px)
-            # 주의: 실제 장비의 FOV 값에 맞춰야 정확한 이동이 가능합니다.
-            img_h, img_w = low_mag_img.shape[:2]
-            fov_width = 200000 / settings['low_mag'] # um 단위 추정
-            pixel_scale = fov_width / img_w 
-            
-            # --- 3단계: 고배율 촬영 루프 (High Mag 1 -> High Mag 2) ---
-            for j, target in enumerate(detections[:settings['high_count']]):
+                # SLOT_COORDINATES에서 좌표 가져오기
+                if sid not in SLOT_COORDINATES:
+                    self.log(f"[Warning] No coordinates defined for Slot #{sid}. Skipping.")
+                    continue
+                    
+                start_x, start_y = SLOT_COORDINATES[sid]
                 
-                # 3-1. 타겟 좌표 계산
-                dx_px = target['x'] - (img_w / 2)
-                dy_px = target['y'] - (img_h / 2)
+                self.log(f"\n>>>> Processing Sample: {sample_name} (Slot #{sid}) at ({start_x}, {start_y})")
                 
-                # (주의: SEM 장비마다 축 방향이 다를 수 있음. +,- 부호 확인 필요)
-                target_x = start_x + (dx_px * pixel_scale)
-                target_y = start_y + (dy_px * pixel_scale)
+                # --- 1단계: 저배율 촬영 (Search) ---
+                # 5000배로 이동
+                self.sem.move_stage(start_x, start_y)
+                self.sem.set_magnification(settings['low_mag'])
+                self.sem.auto_focus()
                 
-                print(f"   --> Target #{j+1}: Moving to ({target_x:.3f}, {target_y:.3f})")
-                self.sem.move_stage(target_x, target_y)
-                
-                # 3-2. High Mag 1 (예: x20,000)
-                mag1 = settings['high_mag']
-                print(f"       [High Mag 1] Shooting x{mag1}")
-                self.sem.set_magnification(mag1)
-                self.sem.auto_focus() # 고배율일수록 초점 다시 맞춰야 함
-                img_high1 = self.sem.acquire_image()
-                
+                # 1장 찍고 저장
+                low_mag_img = self.sem.acquire_image()
                 self.file_manager.save_image(
-                    img_high1, 
-                    f"Particle_{j+1:03d}_x{mag1}.jpg", 
-                    subdir=os.path.join(sample_name, f"HighMag_x{mag1}")
+                    low_mag_img, 
+                    f"Overview_Center.jpg", 
+                    subdir=os.path.join(sample_name, f"LowMag_x{settings['low_mag']}")
                 )
                 
-                # 3-3. High Mag 2 (예: x50,000) - 더 확대!
-                # settings에 'high_mag_2'가 있고, 0보다 클 때만 실행
-                mag2 = settings.get('high_mag_2', 0)
-                if mag2 > mag1:
-                    print(f"       [High Mag 2] Zooming in to x{mag2}")
-                    self.sem.set_magnification(mag2)
+                # --- 2단계: AI 탐지 ---
+                detections = self.ai.detect_particles(low_mag_img)
+                if not detections and self.simulation:
+                    detections = self.ai.detect_blobs_fallback(low_mag_img) # Fallback for simulation
+                
+                self.log(f"[{sample_name}] Found {len(detections)} particles. Selecting top {settings['high_count']}.")
+                
+                # 좌표 변환을 위한 스케일 계산 (예시: FOV 200um / 1024px)
+                # 주의: 실제 장비의 FOV 값에 맞춰야 정확한 이동이 가능합니다.
+                img_h, img_w = low_mag_img.shape[:2]
+                fov_width_um = 200000 / settings['low_mag'] # um 단위 (예: 40um)
+                pixel_scale_um = fov_width_um / img_w       # 픽셀당 um
+                
+                # --- 3단계: 고배율 촬영 루프 (High Mag 1 -> High Mag 2) ---
+                for j, target in enumerate(detections[:settings['high_count']]):
+                    
+                    # 3-1. 타겟 좌표 계산
+                    dx_px = target['x'] - (img_w / 2)
+                    dy_px = target['y'] - (img_h / 2)
+                    
+                    # [중요] 단위 변환: um -> mm (나누기 1000)
+                    # 스테이지는 mm 단위, 이미지 분석은 um 단위이므로 변환 필수
+                    dx_mm = (dx_px * pixel_scale_um) / 1000.0
+                    dy_mm = (dy_px * pixel_scale_um) / 1000.0
+                    
+                    # (주의: SEM 장비마다 축 방향이 다를 수 있음. +,- 부호 확인 필요)
+                    target_x = start_x + dx_mm
+                    target_y = start_y + dy_mm
+                    
+                    self.log(f"   --> Target #{j+1}: Moving to ({target_x:.4f}, {target_y:.4f}) [Shift: {dx_mm*1000:.1f} um, {dy_mm*1000:.1f} um]")
+                    self.sem.move_stage(target_x, target_y)
+                    
+                    # 3-2. High Mag 1 (예: x20,000)
+                    mag1 = settings['high_mag']
+                    self.log(f"       [High Mag 1] Shooting x{mag1}")
+                    self.sem.set_magnification(mag1)
                     self.sem.auto_focus() # 고배율일수록 초점 다시 맞춰야 함
-                    img_high2 = self.sem.acquire_image()
+                    img_high1 = self.sem.acquire_image()
                     
                     self.file_manager.save_image(
-                        img_high2, 
-                        f"Particle_{j+1:03d}_x{mag2}.jpg", 
-                        subdir=os.path.join(sample_name, f"SuperHighMag_x{mag2}")
+                        img_high1, 
+                        f"Particle_{j+1:03d}_x{mag1}.jpg", 
+                        subdir=os.path.join(sample_name, f"HighMag_x{mag1}")
                     )
+                    
+                    # 3-3. High Mag 2 (예: x50,000) - 더 확대!
+                    # settings에 'high_mag_2'가 있고, 0보다 클 때만 실행
+                    mag2 = settings.get('high_mag_2', 0)
+                    if mag2 > mag1:
+                        self.log(f"       [High Mag 2] Zooming in to x{mag2}")
+                        self.sem.set_magnification(mag2)
+                        self.sem.auto_focus() # 고배율일수록 초점 다시 맞춰야 함
+                        img_high2 = self.sem.acquire_image()
+                        
+                        self.file_manager.save_image(
+                            img_high2, 
+                            f"Particle_{j+1:03d}_x{mag2}.jpg", 
+                            subdir=os.path.join(sample_name, f"SuperHighMag_x{mag2}")
+                        )
 
-        print("\n>>> All Samples Completed.")
+            self.log("\n>>> All Samples Completed.")
+            
+        except Exception as e:
+            self.log(f"[CRITICAL ERROR] Automation stopped: {e}")
+            import traceback
+            traceback.print_exc()

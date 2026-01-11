@@ -1,6 +1,16 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, scrolledtext
 import math
+import threading
+import sys
+import os
+
+# 현재 파일(gui.py)의 부모 디렉토리(ui/)의 부모(sem_auto/)를 path에 추가
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(current_dir)
+sys.path.append(project_root)
+
+from core.workflow import AutomationManager
 
 class StubMap(tk.Canvas):
     def __init__(self, master, size=400, on_slot_click=None):
@@ -213,29 +223,46 @@ class SmartSEMApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Smart-SEM Stub Manager")
-        self.root.geometry("900x650") # Increased height for 3rd option
+        self.root.geometry("1300x650") # 가로로 더 넓게 조정
         
-        # Main Layout
+        # Main Layout (Horizontal)
         main_frame = ttk.Frame(root, padding="10")
         main_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Left Panel (Stub Map)
-        left_panel = ttk.LabelFrame(main_frame, text=" Visual Stub Map ", padding="10")
+        # 1. Left Panel (Stub Map)
+        left_panel = ttk.LabelFrame(main_frame, text=" 1. Visual Stub Map ", padding="10")
         left_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
         self.stub_map = StubMap(left_panel, size=400, on_slot_click=self.on_slot_selected)
-        self.stub_map.pack(anchor=tk.CENTER)
+        self.stub_map.pack(anchor=tk.CENTER, pady=20)
         
-        # Right Panel (Controls)
-        right_panel = ttk.LabelFrame(main_frame, text=" Control Panel ", padding="20")
-        right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=False, padx=(10, 0))
+        # 2. Middle Panel (Controls)
+        right_panel = ttk.LabelFrame(main_frame, text=" 2. Control Panel ", padding="20")
+        right_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=False, padx=10)
         
         self.create_controls(right_panel)
+        
+        # 3. Right Panel (Real-time Logs) - 세로로 길게 배치
+        log_panel = ttk.LabelFrame(main_frame, text=" 3. Real-time Logs ", padding="10")
+        log_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        self.log_widget = scrolledtext.ScrolledText(log_panel, width=40, state='disabled', font=("Consolas", 10))
+        self.log_widget.pack(fill=tk.BOTH, expand=True)
         
         # Status Bar
         self.status_var = tk.StringVar(value="Ready. Click a slot to configure.")
         status_bar = ttk.Label(root, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W)
         status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+
+    def log_message(self, message):
+        """Append message to the log widget in a thread-safe way."""
+        def _append():
+            self.log_widget.config(state='normal')
+            self.log_widget.insert(tk.END, message + "\n")
+            self.log_widget.see(tk.END) # Auto-scroll
+            self.log_widget.config(state='disabled')
+        
+        self.root.after(0, _append)
 
     def create_controls(self, parent):
         # Batch Edit Button
@@ -395,9 +422,43 @@ class SmartSEMApp:
         confirm = messagebox.askyesno("Confirm Start", summary + "\nStart SEM Automation now?")
         
         if confirm:
-            print(">>> Sending Configuration to Workflow Engine...")
-            print(active_slots)
-            messagebox.showinfo("Started", "Automation started! Check the console/log.")
+            self.btn_run.config(state=tk.DISABLED, text="Running...")
+            self.log_message(">>> Initializing Automation Thread...")
+            
+            # Start in a separate thread to prevent GUI freezing
+            thread = threading.Thread(target=self.run_workflow_thread, args=(active_slots,))
+            thread.daemon = True # Exit thread when main app closes
+            thread.start()
+
+    def run_workflow_thread(self, active_slots):
+        try:
+            # Instantiate AutomationManager with the GUI log callback
+            # Note: simulation=True by default. In real usage, this should be toggled via CLI arg or Checkbox.
+            # For now, let's assume simulation=False if we are "Starting Automation" (or pass a flag).
+            # Let's keep it safe: Simulation=True unless changed in code.
+            # *Ideally, add a Checkbox "Simulation Mode" in GUI*
+            
+            # For this deployment, I will hardcode simulation=False so it works on real hardware,
+            # BUT wrapped in try-except so it doesn't crash if sharksem is missing.
+            
+            # Or better: Check if sharksem is importable.
+            try:
+                import sharksem
+                sim_mode = False
+            except ImportError:
+                sim_mode = True
+                self.log_message("[System] SharkSEM not found. Running in SIMULATION MODE.")
+
+            manager = AutomationManager(simulation=sim_mode, log_callback=self.log_message)
+            manager.run(active_slots)
+            
+            self.log_message(">>> Automation Workflow Finished.")
+            
+        except Exception as e:
+            self.log_message(f"[GUI Error] Thread failed: {e}")
+        finally:
+            # Re-enable button (needs to be done in main thread)
+            self.root.after(0, lambda: self.btn_run.config(state=tk.NORMAL, text="START AUTOMATION"))
 
 def launch_gui():
     root = tk.Tk()
