@@ -99,26 +99,56 @@ class MockAdapter:
         time.sleep(2) # Simulate scan time
         return img
 
+import time
+import cv2
+import os
+
 class RealAdapter:
     def __init__(self):
-        # This will eventually import the real SharkSEM API
-        pass
+        self.atom = None 
+        self.sem = None  
 
     def connect(self):
-        # TODO: Implement real connection
-        raise NotImplementedError("Real hardware connection not yet implemented. Use --simulation.")
+        try:
+            # 분석실 PC에 있는 라이브러리 로드
+            from tescanautomation import Automation
+            self.atom = Automation('localhost')
+            self.sem = self.atom.Client()
+            print("✅ [RealAdapter] Tescan MIRA4 장비와 연결되었습니다.")
+        except ImportError:
+            print("❌ [Error] tescanautomation 라이브러리를 찾을 수 없습니다.")
+            print("   -> 분석실 PC의 Essence Python 환경에서 실행해야 합니다.")
+            raise
 
     def set_magnification(self, mag):
-        pass
+        # Tescan은 배율 대신 ViewField(mm)를 사용합니다.
+        # 공식: ViewField ≈ 200.0 / 배율 (장비마다 다를 수 있어 확인 필요)
+        if mag < 10: mag = 10
+        viewfield_mm = 200.0 / float(mag)
+        print(f"[Real] 배율 x{mag} 설정 (ViewField: {viewfield_mm:.4f} mm)")
+        self.sem.Optics.SetViewfield(viewfield_mm)
 
     def move_stage(self, x, y):
-        pass
+        print(f"[Real] 스테이지 이동: X={x:.3f}, Y={y:.3f}")
+        self.sem.Stage.MoveTo(x, y)
+        time.sleep(0.5) # 진동 대기
 
     def auto_focus(self):
-        pass
+        print("[Real] 오토 포커스 실행...")
+        self.sem.Optics.AutoFocus()
+        time.sleep(1.0) # 포커스 안정화 대기
 
     def acquire_image(self):
-        return np.zeros((1024, 1024, 3), dtype=np.uint8)
-    
+        print("[Real] 촬영 중...")
+        # 1. Tescan 명령어로 촬영 (Detector='SE', 해상도=1024)
+        # 인자 순서: Detector, BitDepth, Width, Height, DwellTime, Accumulation...
+        img_obj = self.sem.Scan.AcquireImage("SE", 8, 1024, 1024, 10.0, 1, "Frame")
+        
+        # 2. 호환성을 위해 임시 저장 후 OpenCV로 다시 읽기
+        temp_path = "temp_capture.tif"
+        img_obj.save(temp_path)
+        img_cv = cv2.imread(temp_path)
+        return img_cv
+
     def get_stage_position(self):
-        return 0, 0
+        return self.sem.Stage.X, self.sem.Stage.Y

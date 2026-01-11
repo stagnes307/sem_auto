@@ -412,53 +412,16 @@ class SmartSEMApp:
             messagebox.showerror("Error", "Please select at least one sample slot!")
             return
             
-        # Summary
-        summary = "Automation Plan:\n\n"
-        for sid, data in active_slots.items():
-            s = data['settings']
-            name = data['name']
-            summary += f"[{name}] Slot {sid}\n   Search: x{s['low_mag']} -> High1: x{s['high_mag']} -> High2: x{s['high_mag_2']}\n"
-            
-        confirm = messagebox.askyesno("Confirm Start", summary + "\nStart SEM Automation now?")
-        
-        if confirm:
-            self.btn_run.config(state=tk.DISABLED, text="Running...")
-            self.log_message(">>> Initializing Automation Thread...")
-            
-            # Start in a separate thread to prevent GUI freezing
-            thread = threading.Thread(target=self.run_workflow_thread, args=(active_slots,))
-            thread.daemon = True # Exit thread when main app closes
-            thread.start()
+        summary = f"총 {len(active_slots)}개 샘플을 분석합니다.\n진행하시겠습니까?"
+        if messagebox.askyesno("Confirm Start", summary):
+            # [중요] 설정 데이터를 저장하고 GUI를 종료하여 main으로 돌아감
+            self.config_data = active_slots
+            print(">>> GUI 설정 완료. 메인 로직으로 이동합니다.")
+            self.root.quit() # mainloop 종료
 
     def run_workflow_thread(self, active_slots):
-        try:
-            # Instantiate AutomationManager with the GUI log callback
-            # Note: simulation=True by default. In real usage, this should be toggled via CLI arg or Checkbox.
-            # For now, let's assume simulation=False if we are "Starting Automation" (or pass a flag).
-            # Let's keep it safe: Simulation=True unless changed in code.
-            # *Ideally, add a Checkbox "Simulation Mode" in GUI*
-            
-            # For this deployment, I will hardcode simulation=False so it works on real hardware,
-            # BUT wrapped in try-except so it doesn't crash if sharksem is missing.
-            
-            # Or better: Check if sharksem is importable.
-            try:
-                import sharksem
-                sim_mode = False
-            except ImportError:
-                sim_mode = True
-                self.log_message("[System] SharkSEM not found. Running in SIMULATION MODE.")
-
-            manager = AutomationManager(simulation=sim_mode, log_callback=self.log_message)
-            manager.run(active_slots)
-            
-            self.log_message(">>> Automation Workflow Finished.")
-            
-        except Exception as e:
-            self.log_message(f"[GUI Error] Thread failed: {e}")
-        finally:
-            # Re-enable button (needs to be done in main thread)
-            self.root.after(0, lambda: self.btn_run.config(state=tk.NORMAL, text="START AUTOMATION"))
+        # ... (Deprecated) ...
+        pass
 
 def launch_gui():
     root = tk.Tk()
@@ -470,7 +433,18 @@ def launch_gui():
         pass
         
     app = SmartSEMApp(root)
-    root.mainloop()
+    app.config_data = None # 데이터 담을 변수 초기화
+    
+    root.mainloop() # 여기서 창이 뜰 동안 대기함
+    
+    # 창이 닫히면(root.quit) 여기로 넘어옴
+    try:
+        root.destroy()
+    except:
+        pass
+        
+    # 설정된 데이터를 main.py로 반환
+    return app.config_data
 
 if __name__ == "__main__":
     launch_gui()
